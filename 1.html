@@ -1,0 +1,177 @@
+HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>2D 平面槍戰</title>
+    <style>
+        body { margin: 0; background: #1a1a1a; color: #fff; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif; }
+        canvas { background: #2c3e50; border: 4px solid #34495e; box-shadow: 0 0 20px rgba(0,0,0,0.5); cursor: crosshair; }
+        #ui { position: absolute; top: 20px; width: 800px; display: flex; justify-content: space-between; pointer-events: none; }
+        .info { background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 5px; border-left: 4px solid #27ae60; }
+        #crosshair-hint { position: absolute; bottom: 20px; color: #7f8c8d; }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div class="info">血量: <span id="hp">100</span>%</div>
+        <div class="info">彈藥: <span id="ammo">30</span> / 90</div>
+        <div class="info">得分: <span id="score">0</span></div>
+    </div>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="crosshair-hint">WASD 移動 | 滑鼠轉向 | 左鍵射擊</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 1. 遊戲物件設定
+        let player = { x: 100, y: 100, angle: 0, hp: 100, ammo: 30, score: 0 };
+        let bullets = [];
+        let enemies = [];
+        let particles = [];
+        let keys = {};
+        let mouse = { x: 0, y: 0 };
+
+        // 2. 地圖障礙物
+        const walls = [
+            {x: 200, y: 150, w: 50, h: 300},
+            {x: 400, y: 0, w: 50, h: 200},
+            {x: 550, y: 350, w: 200, h: 50}
+        ];
+
+        // 監聽輸入
+        window.onkeydown = e => keys[e.code] = true;
+        window.onkeyup = e => keys[e.code] = false;
+        canvas.onmousemove = e => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        };
+        canvas.onmousedown = shoot;
+
+        function shoot() {
+            if (player.ammo > 0) {
+                player.ammo--;
+                document.getElementById('ammo').innerText = player.ammo;
+                bullets.push({
+                    x: player.x + Math.cos(player.angle) * 20,
+                    y: player.y + Math.sin(player.angle) * 20,
+                    vx: Math.cos(player.angle) * 8,
+                    vy: Math.sin(player.angle) * 8
+                });
+            }
+        }
+
+        // 生成敵人
+        function spawnEnemy() {
+            if (enemies.length < 5) {
+                enemies.push({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    hp: 50,
+                    speed: 1 + Math.random()
+                });
+            }
+        }
+        setInterval(spawnEnemy, 2000);
+
+        function update() {
+            // 旋轉玩家面向滑鼠
+            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
+
+            // 移動
+            let nextX = player.x;
+            let nextY = player.y;
+            if (keys['KeyW']) nextY -= 3;
+            if (keys['KeyS']) nextY += 3;
+            if (keys['KeyA']) nextX -= 3;
+            if (keys['KeyD']) nextX += 3;
+
+            // 簡單碰撞檢測
+            let collision = false;
+            walls.forEach(w => {
+                if (nextX > w.x && nextX < w.x + w.w && nextY > w.y && nextY < w.y + w.h) collision = true;
+            });
+            if (!collision) { player.x = nextX; player.y = nextY; }
+
+            // 更新子彈
+            bullets.forEach((b, i) => {
+                b.x += b.vx; b.y += b.vy;
+                if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) bullets.splice(i, 1);
+                
+                // 子彈打牆
+                walls.forEach(w => {
+                    if (b.x > w.x && b.x < w.x + w.w && b.y > w.y && b.y < w.y + w.h) bullets.splice(i, 1);
+                });
+            });
+
+            // 更新敵人
+            enemies.forEach((en, i) => {
+                let dx = player.x - en.x;
+                let dy = player.y - en.y;
+                let dist = Math.sqrt(dx*dx + dy*dy);
+                en.x += (dx/dist) * en.speed;
+                en.y += (dy/dist) * en.speed;
+
+                // 敵人被子彈擊中
+                bullets.forEach((b, bi) => {
+                    let bDist = Math.sqrt((b.x - en.x)**2 + (b.y - en.y)**2);
+                    if (bDist < 15) {
+                        en.hp -= 25;
+                        bullets.splice(bi, 1);
+                        if (en.hp <= 0) {
+                            enemies.splice(i, 1);
+                            player.score += 100;
+                            document.getElementById('score').innerText = player.score;
+                        }
+                    }
+                });
+
+                // 敵人碰到玩家
+                if (dist < 20) {
+                    player.hp -= 0.5;
+                    document.getElementById('hp').innerText = Math.floor(player.hp);
+                }
+            });
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 畫牆壁
+            ctx.fillStyle = '#95a5a6';
+            walls.forEach(w => ctx.fillRect(w.x, w.y, w.w, w.h));
+
+            // 畫敵人
+            enemies.forEach(en => {
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath(); ctx.arc(en.x, en.y, 15, 0, Math.PI*2); ctx.fill();
+            });
+
+            // 畫子彈
+            ctx.fillStyle = '#f1c40f';
+            bullets.forEach(b => {
+                ctx.beginPath(); ctx.arc(b.x, b.y, 3, 0, Math.PI*2); ctx.fill();
+            });
+
+            // 畫玩家
+            ctx.save();
+            ctx.translate(player.x, player.y);
+            ctx.rotate(player.angle);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(-15, -15, 30, 30); // 身體
+            ctx.fillStyle = '#27ae60';
+            ctx.fillRect(10, -5, 15, 10);  // 槍管
+            ctx.restore();
+
+            requestAnimationFrame(() => {
+                update();
+                draw();
+            });
+        }
+
+        draw();
+    </script>
+</body>
+</html>
